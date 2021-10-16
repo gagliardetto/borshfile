@@ -37,28 +37,11 @@ func (bf *BorshFile) WriteUint32LE(v uint32) error {
 }
 
 func (bf *BorshFile) WriteBorshSlice(buf []byte) (int, error) {
-	// Write len:
-	err := WriteUint32LE(bf.file, uint32(len(buf)))
-	if err != nil {
-		return 0, err
-	}
-	// Write content:
-	n, err := bf.WriteBytes(buf)
-	if err != nil {
-		return 0, err
-	}
-	return n + 4, nil
+	return WriteBorshSlice(bf.file, buf)
 }
 
 func (bf *BorshFile) WriteZSTDByteSlice(buf []byte) (int, error) {
-	enc, err := zstdEncoderPool.Get(nil)
-	if err != nil {
-		return 0, err
-	}
-	defer zstdEncoderPool.Put(enc)
-
-	encoded := enc.EncodeAll(buf, nil)
-	return bf.WriteBorshSlice(encoded)
+	return WriteZSTDByteSlice(bf.file, buf)
 }
 
 func (bf *BorshFile) ReadUint32LE(buf []byte) (out uint32, err error) {
@@ -71,6 +54,27 @@ func (bf *BorshFile) GetFile() *os.File {
 
 func (bf *BorshFile) ReadBorshSlice() (out []byte, contentLength uint32, err error) {
 	return ReadBorshSlice(bf.file)
+}
+
+func (bf *BorshFile) ReadZSTDBorshSlice() (contentBuffer []byte, contentLength uint32, err error) {
+	return ReadZSTDBorshSlice(bf.file)
+}
+
+func ReadUint32LE(reader io.Reader) (out uint32, err error) {
+	return ReadUint32(reader, binary.LittleEndian)
+}
+
+func ReadUint32(reader io.Reader, order binary.ByteOrder) (out uint32, err error) {
+	buf := make([]byte, 4)
+	n, err := io.ReadFull(reader, buf)
+	if err != nil {
+		return 0, err
+	}
+	if n != 4 {
+		return 0, fmt.Errorf("expected 4 bytes, got %v", n)
+	}
+	out = order.Uint32(buf)
+	return
 }
 
 func ReadBorshSlice(reader io.Reader) (out []byte, contentLength uint32, err error) {
@@ -87,10 +91,6 @@ func ReadBorshSlice(reader io.Reader) (out []byte, contentLength uint32, err err
 		return nil, 0, fmt.Errorf("expected %v bytes, got %v bytes", contentLength, readLength)
 	}
 	return contentBuffer, contentLength, nil
-}
-
-func (bf *BorshFile) ReadZSTDBorshSlice() (contentBuffer []byte, contentLength uint32, err error) {
-	return ReadZSTDBorshSlice(bf.file)
 }
 
 func ReadZSTDBorshSlice(reader io.Reader) (contentBuffer []byte, contentLength uint32, err error) {
@@ -125,19 +125,27 @@ func WriteUint32(writer io.Writer, i uint32, order binary.ByteOrder) (err error)
 	return err
 }
 
-func ReadUint32LE(reader io.Reader) (out uint32, err error) {
-	return ReadUint32(reader, binary.LittleEndian)
-}
-
-func ReadUint32(reader io.Reader, order binary.ByteOrder) (out uint32, err error) {
-	buf := make([]byte, 4)
-	n, err := io.ReadFull(reader, buf)
+func WriteBorshSlice(dst io.Writer, buf []byte) (int, error) {
+	// Write len:
+	err := WriteUint32LE(dst, uint32(len(buf)))
 	if err != nil {
 		return 0, err
 	}
-	if n != 4 {
-		return 0, fmt.Errorf("expected 4 bytes, got %v", n)
+	// Write content:
+	n, err := dst.Write(buf)
+	if err != nil {
+		return 0, err
 	}
-	out = order.Uint32(buf)
-	return
+	return n + 4, nil
+}
+
+func WriteZSTDByteSlice(dst io.Writer, buf []byte) (int, error) {
+	enc, err := zstdEncoderPool.Get(nil)
+	if err != nil {
+		return 0, err
+	}
+	defer zstdEncoderPool.Put(enc)
+
+	encoded := enc.EncodeAll(buf, nil)
+	return WriteBorshSlice(dst, encoded)
 }
