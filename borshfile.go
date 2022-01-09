@@ -77,6 +77,23 @@ func ReadUint32(reader io.Reader, order binary.ByteOrder) (out uint32, err error
 	return
 }
 
+func ReadUint64LE(reader io.Reader) (out uint64, err error) {
+	return ReadUint64(reader, binary.LittleEndian)
+}
+
+func ReadUint64(reader io.Reader, order binary.ByteOrder) (out uint64, err error) {
+	buf := make([]byte, 8)
+	n, err := io.ReadFull(reader, buf)
+	if err != nil {
+		return 0, err
+	}
+	if n != 8 {
+		return 0, fmt.Errorf("expected 8 bytes, got %v", n)
+	}
+	out = order.Uint64(buf)
+	return
+}
+
 func ReadBorshSlice(reader io.Reader) (out []byte, contentLength uint32, err error) {
 	contentLength, err = ReadUint32LE(reader)
 	if err != nil {
@@ -121,6 +138,17 @@ func WriteUint32LE(writer io.Writer, i uint32) (err error) {
 func WriteUint32(writer io.Writer, i uint32, order binary.ByteOrder) (err error) {
 	buf := make([]byte, 4)
 	order.PutUint32(buf, i)
+	_, err = writer.Write(buf)
+	return err
+}
+
+func WriteUint64LE(writer io.Writer, i uint64) (err error) {
+	return WriteUint64(writer, i, binary.LittleEndian)
+}
+
+func WriteUint64(writer io.Writer, i uint64, order binary.ByteOrder) (err error) {
+	buf := make([]byte, 8)
+	order.PutUint64(buf, i)
 	_, err = writer.Write(buf)
 	return err
 }
